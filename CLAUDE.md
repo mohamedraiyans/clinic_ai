@@ -32,7 +32,7 @@ Backend and `frontend/src` are bind-mounted, so edits reload automatically. Rebu
 3. **Send the LLM no patient identifiers.** `/api/analyze` strips `id` and `name`. Never add name, phone, address or national ID to the prompt.
 4. **No numeric "% match" from the LLM.** It isn't calibrated. Use `most_likely` / `possible` / `less_likely` plus reasoning.
 5. **Nothing is signed without explicit doctor approval**, and AI calls and signatures go into `audit_log`.
-6. **Every `/api` route needs `Depends(current_doctor)`** except `/api/auth/*` and `/api/verify/{id}` (public on purpose: QR target, no patient data). Only emails in `ALLOWED_DOCTOR_EMAILS` may sign in; a Google account alone is not enough. `DEV_LOGIN=1` is local testing only and must be `0` in production.
+6. **Every `/api` route needs `Depends(current_doctor)`** except `/api/auth/*`, `/api/verify/{id}` and the HTML page `/verify/{id}` (public on purpose: QR target; must never show patient name or other identity; escape everything with `html.escape`). Only emails in `ALLOWED_DOCTOR_EMAILS` may sign in; a Google account alone is not enough. `DEV_LOGIN=1` is local testing only and must be `0` in production.
 7. **Patient edits go to `audit_log`** with a before/after diff, because allergies and current medicines drive the safety checks. Doctors can't sign without `reg_no` and `clinic` in their profile.
 8. **Never commit or print `.env`.** It holds the API keys and `SIGNING_SECRET`. `.env.example` is the template.
 

@@ -72,15 +72,21 @@ def build(rx, doctor, patient) -> bytes:
     c.drawString(50, sy - 12, f"Signature: {rx.signature[:32]}...")
     c.drawString(50, sy - 24, f"ID: {rx.id}")
 
-    url = f"{os.getenv('PUBLIC_BASE_URL', 'http://localhost:8000')}/api/verify/{rx.id}"
+    url = f"{os.getenv('PUBLIC_BASE_URL', 'http://localhost:8000')}/verify/{rx.id}"
+    c.setFont("Helvetica", 7)
+    c.drawString(50, sy - 38, f"Verify: {url}")
+
     code = qr.QrCodeWidget(url)
     x0, y0, x1, y1 = code.getBounds()
-    size = 90
+    size = 110
+    qx, qy = w - 50 - size, 118
     d = Drawing(size, size, transform=[size / (x1 - x0), 0, 0, size / (y1 - y0), 0, 0])
     d.add(code)
-    renderPDF.draw(d, c, w - 150, 100)
-    c.setFont("Helvetica", 8)
-    c.drawString(w - 150, 90, "Scan to verify")
+    renderPDF.draw(d, c, qx, qy)
+    c.setFont("Helvetica-Bold", 8)
+    c.drawCentredString(qx + size / 2, qy - 11, "Scan to verify")
+    c.setFont("Helvetica", 7)
+    c.drawCentredString(qx + size / 2, qy - 20, "authenticity of this prescription")
 
     c.setFont("Helvetica-Oblique", 8)
     c.drawString(50, 40, "AI-assisted draft, reviewed, edited and approved by the prescribing doctor.")

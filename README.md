@@ -85,7 +85,7 @@ Blocked medicines are not shown as options, only listed as "Blocked" with the re
 - The doctor can edit or remove any medicine before approving.
 - The server builds a signature with HMAC-SHA256 over the prescription (ID, patient, doctor, medicines, time) using `SIGNING_SECRET`.
 - The prescription is saved in Postgres. The PDF is **built on demand** from that data, so there are no files to lose.
-- The PDF has the clinic and doctor header, patient details, allergies, complaint, medicines, signature block and a **QR code**. Scanning it opens `/api/verify/{id}`, which recomputes the signature and says whether the prescription is genuine and unaltered.
+- The PDF has the clinic and doctor header, patient details, allergies, complaint, medicines, signature block and a **QR code**. Scanning it opens `/verify/{id}`, which recomputes the signature and shows whether the prescription is genuine and unaltered. The signature covers the prescription ID, patient, doctor, medicines and issue time. It does not cover the complaint text. For the QR to work from a phone, set `PUBLIC_BASE_URL` to the server's real address (not `localhost`).
 
 ### 4. Doctors and patients
 - Doctors sign in with Google. The server checks the email against the allowlist and sets an HttpOnly session cookie (JWT, 12 hours). Every API route except `/api/verify` requires it.
@@ -134,7 +134,8 @@ docker-compose.yml   db + api + web
 | POST | `/api/analyze` | AI draft or follow-up questions |
 | POST | `/api/prescriptions` | approve, sign, save |
 | GET | `/api/prescriptions/{id}/pdf` | signed PDF |
-| GET | `/api/verify/{id}` | check a signature (public, used by the QR code) |
+| GET | `/verify/{id}` | public page the QR code opens: green "Authentic" with doctor, registration, date and medicines (no patient identity), or red "Not valid" |
+| GET | `/api/verify/{id}` | same check as JSON |
 
 ## Known limitations (MVP)
 

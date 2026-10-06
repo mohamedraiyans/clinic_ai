@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import html
 import json
 import os
 from contextlib import asynccontextmanager
@@ -7,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import Cookie, Depends, FastAPI, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -266,13 +267,63 @@ def rx_pdf(rx_id: str, t: str | None = None, session: str | None = Cookie(defaul
                     headers={"Content-Disposition": f'inline; filename="rx-{rx.id[:8]}.pdf"'})
 
 
-@app.get("/api/verify/{rx_id}")
-def verify(rx_id: str, db: Session = Depends(get_db)):
-    """Public on purpose: the QR code on the PDF points here. Reveals no patient data."""
+def _verify(rx_id: str, db: Session):
+    """Returns (valid, rx, doctor). A prescription is valid only if its stored signature matches
+    a fresh HMAC over the stored contents, so any edit to the database row breaks it."""
     rx = db.get(Prescription, rx_id)
     if not rx:
-        return {"valid": False}
+        return False, None, None
     expected = _sign(rx.id, rx.patient_id, rx.doctor_id, rx.items, rx.issued_at)
-    doctor = db.get(Doctor, rx.doctor_id)
-    return {"valid": hmac.compare_digest(expected, rx.signature), "issued_at": rx.issued_at,
-            "doctor": doctor.name, "reg_no": doctor.reg_no}
+    return hmac.compare_digest(expected, rx.signature), rx, db.get(Doctor, rx.doctor_id)
+
+
+@app.get("/api/verify/{rx_id}")
+def verify(rx_id: str, db: Session = Depends(get_db)):
+    """Public on purpose (machine-readable). Reveals no patient identity."""
+    valid, rx, doctor = _verify(rx_id, db)
+    if not rx:
+        return {"valid": False}
+    return {"valid": valid, "issued_at": rx.issued_at, "doctor": doctor.name, "reg_no": doctor.reg_no}
+
+
+_VERIFY_CSS = """
+:root{--bg:#f4f6f8;--card:#fff;--text:#1b2430;--muted:#667;--ok:#14733a;--okbg:#dcf5e4;--bad:#b3261e;--badbg:#fde8e6;--line:#dde3ea}
+@media (prefers-color-scheme:dark){:root{--bg:#12161c;--card:#1b222b;--text:#e8edf3;--muted:#9aa6b4;--ok:#6fdc97;--okbg:#17321f;--bad:#ff8a80;--badbg:#3a1a18;--line:#2d3743}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,sans-serif;padding:16px}
+.card{max-width:520px;margin:24px auto;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px}
+.badge{border-radius:10px;padding:14px 16px;font-weight:700;font-size:18px}
+.ok{background:var(--okbg);color:var(--ok)}.bad{background:var(--badbg);color:var(--bad)}
+dl{margin:16px 0 0;display:grid;grid-template-columns:auto 1fr;gap:6px 14px}dt{color:var(--muted)}dd{margin:0}
+h2{font-size:15px;margin:18px 0 6px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+ul{margin:0;padding-left:20px}small{color:var(--muted)}
+"""
+
+
+@app.get("/verify/{rx_id}", response_class=HTMLResponse)
+def verify_page(rx_id: str, db: Session = Depends(get_db)):
+    """Public page the QR code opens. Shows who issued it and what was prescribed, but not who it was for."""
+    valid, rx, doctor = _verify(rx_id, db)
+    esc = html.escape
+    if not rx:
+        body = ('<div class="badge bad">Prescription not found</div>'
+                "<p>No prescription with this ID exists. Do not dispense it.</p>")
+    elif not valid:
+        body = ('<div class="badge bad">Not valid: contents do not match the signature</div>'
+                "<p>This prescription may have been altered. Do not dispense it. Contact the issuing clinic.</p>")
+    else:
+        meds = "".join(
+            f"<li><b>{esc(i.get('name', ''))}</b>, {esc(i.get('dose', ''))}, {esc(i.get('frequency', ''))}, "
+            f"{esc(i.get('duration', ''))}</li>" for i in rx.items)
+        body = ('<div class="badge ok">Authentic prescription</div>'
+                f"<dl><dt>Doctor</dt><dd>{esc(doctor.name)}</dd>"
+                f"<dt>Registration</dt><dd>{esc(doctor.reg_no)}</dd>"
+                f"<dt>Clinic</dt><dd>{esc(doctor.clinic)}</dd>"
+                f"<dt>Issued</dt><dd>{esc(rx.issued_at)}</dd></dl>"
+                f"<h2>Prescribed</h2><ul>{meds}</ul>"
+                "<p><small>The signature matches the stored prescription. Patient details are not shown "
+                "here; check them on the printed copy.</small></p>")
+    page = (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
+            f'<meta name="viewport" content="width=device-width,initial-scale=1">'
+            f"<title>Verify prescription</title><style>{_VERIFY_CSS}</style></head>"
+            f'<body><div class="card">{body}</div></body></html>')
+    return HTMLResponse(page, headers={"Cache-Control": "no-store"})
