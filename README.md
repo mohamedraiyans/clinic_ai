@@ -25,7 +25,17 @@ docker compose up -d --build
 - App: http://localhost:5173
 - API docs: http://localhost:8000/docs
 
-`.env` needs: the database login, the Azure OpenAI endpoint/key/deployment, the Groq key, and a `SIGNING_SECRET` (generate one with `openssl rand -hex 32`). `.env` is git-ignored. **Never commit it.**
+`.env` needs: the database login, the Azure OpenAI endpoint/key/deployment, the Groq key, `SIGNING_SECRET` and `JWT_SECRET` (generate each with `openssl rand -hex 32`), the doctor allowlist and the Google OAuth client. `.env` is git-ignored. **Never commit it.**
+
+### Doctor login (Google)
+
+1. In [Google Cloud Console](https://console.cloud.google.com/apis/credentials) create an **OAuth client ID** of type *Web application*.
+2. Add this **Authorized redirect URI**: `http://localhost:8000/api/auth/google/callback`
+3. Put the client ID and secret in `.env` (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`).
+4. Put the doctors' Gmail addresses in `ALLOWED_DOCTOR_EMAILS` (comma-separated). **Only these accounts can sign in.** Everyone else is refused, even with a valid Google account.
+5. On first login a doctor fills in a profile (name, registration number, clinic). It is printed on every prescription they sign.
+
+For local testing without Google, set `DEV_LOGIN=1`. The login page then shows an email box that still honours the allowlist. **Set it to `0` anywhere real.**
 
 The database is created and filled with demo data on first start: 4 patients, 17 medicines and 1 demo doctor.
 
@@ -77,7 +87,12 @@ Blocked medicines are not shown as options, only listed as "Blocked" with the re
 - The prescription is saved in Postgres. The PDF is **built on demand** from that data, so there are no files to lose.
 - The PDF has the clinic and doctor header, patient details, allergies, complaint, medicines, signature block and a **QR code**. Scanning it opens `/api/verify/{id}`, which recomputes the signature and says whether the prescription is genuine and unaltered.
 
-### 4. Patient history
+### 4. Doctors and patients
+- Doctors sign in with Google. The server checks the email against the allowlist and sets an HttpOnly session cookie (JWT, 12 hours). Every API route except `/api/verify` requires it.
+- Any signed-in doctor can **add or edit patients** (name, age, sex, weight, pregnancy, allergies, conditions, current medicines). Input is validated and cleaned (duplicates dropped, a male patient can't be pregnant), and every change is saved in the audit log with a before/after diff, because allergies and current medicines drive the safety checks.
+- PDFs open through a short-lived link (10 minutes) so they work in a new tab or an external PDF viewer.
+
+### 5. Patient history
 Every signed prescription appears in the patient's **Visit history** card (date, complaint, diagnoses, medicines, PDF link). The last 5 visits are also given to the AI, so it can notice repeated problems or treatments that did not work.
 
 ## Design rules
@@ -109,7 +124,12 @@ docker-compose.yml   db + api + web
 
 | Method | Path | Purpose |
 |---|---|---|
+| GET | `/api/auth/google/login` | start Google sign-in |
+| GET/PUT | `/api/auth/me` | current doctor / update profile |
+| POST | `/api/auth/logout` | sign out |
 | GET | `/api/patients` | list patients |
+| POST | `/api/patients` | add a patient |
+| PUT | `/api/patients/{id}` | edit a patient |
 | GET | `/api/patients/{id}/history` | a patient's signed visits |
 | POST | `/api/analyze` | AI draft or follow-up questions |
 | POST | `/api/prescriptions` | approve, sign, save |
@@ -118,7 +138,8 @@ docker-compose.yml   db + api + web
 
 ## Known limitations (MVP)
 
-- No login. Everything is signed as one demo doctor.
+- All allowlisted doctors share one patient list. There are no roles (admin) and no patient archive or delete.
+- Google login was verified end-to-end only through the dev login. Test it against your own Google OAuth client before relying on it.
 - The signature is an HMAC plus a typed name, not a certificate-based digital signature (PAdES).
 - The formulary and interaction list are a small demo set. A real clinic needs its own formulary or a drug-interaction database.
 - A visit is saved only when a prescription is signed.
@@ -126,7 +147,7 @@ docker-compose.yml   db + api + web
 
 ## Roadmap
 
-- Doctor accounts (JWT login) and per-doctor signature images
+- Per-doctor signature images, roles (admin manages the allowlist), per-clinic patient scoping
 - Real certificate-based PDF signing
 - A `visits` table to store every consultation, with notes and vitals fields
 - Real drug database and interaction checks

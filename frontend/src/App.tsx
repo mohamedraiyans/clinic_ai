@@ -1,12 +1,22 @@
 import { useEffect, useState } from "react";
 import * as api from "./api";
-import type { AnalyzeResult, Medicine, Patient, QA, Visit } from "./api";
+import type { AnalyzeResult, Doctor, Medicine, Patient, QA, Visit } from "./api";
+import Login from "./Login";
+import PatientForm from "./PatientForm";
+import ProfileForm from "./ProfileForm";
 
 const LIKELIHOOD: Record<string, string> = {
   most_likely: "Most likely", possible: "Possible", less_likely: "Less likely",
 };
 
-export default function App() {
+interface WorkspaceProps {
+  me: Doctor;
+  onMe: (d: Doctor) => void;
+  onLogout: () => void;
+  onAuthLost: () => void;
+}
+
+function Workspace({ me, onMe, onLogout, onAuthLost }: WorkspaceProps) {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [patient, setPatient] = useState<Patient | null>(null);
   const [complaint, setComplaint] = useState("");
@@ -17,13 +27,15 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [pdfUrl, setPdfUrl] = useState("");
-
   const [visits, setVisits] = useState<Visit[]>([]);
+  const [search, setSearch] = useState("");
+  const [form, setForm] = useState<"none" | "add" | "edit" | "profile">("none");
 
-  useEffect(() => { api.getPatients().then(setPatients).catch((e) => setError(e.message)); }, []);
+  const fail = (e: unknown) => (e instanceof api.AuthError ? onAuthLost() : setError((e as Error).message));
 
-  const loadHistory = (id: number) =>
-    api.getHistory(id).then(setVisits).catch((e) => setError(e.message));
+  useEffect(() => { api.getPatients().then(setPatients).catch(fail); }, []);
+
+  const loadHistory = (id: number) => api.getHistory(id).then(setVisits).catch(fail);
   useEffect(() => { setVisits([]); if (patient) loadHistory(patient.id); }, [patient?.id]);
 
   const reset = () => { setQa([]); setAnswers([]); setResult(null); setItems([]); setPdfUrl(""); setError(""); };
@@ -35,7 +47,7 @@ export default function App() {
       const r = await api.analyze(patient.id, complaint, history);
       setResult(r); setQa(history); setAnswers(r.questions.map(() => ""));
       setItems(r.medicines);
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) { fail(e); }
     setBusy(false);
   };
 
@@ -49,34 +61,62 @@ export default function App() {
 
   const approve = async () => {
     if (!patient || !result) return;
+    if (!me.profile_complete) { setForm("profile"); return; }
     setBusy(true); setError("");
     try {
       const r = await api.sign(patient.id, complaint, result.assessments, items);
       setPdfUrl(r.pdf_url);
       loadHistory(patient.id);
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) { fail(e); }
     setBusy(false);
   };
+
+  const saved = (p: Patient) => {
+    setPatients((prev) => [...prev.filter((x) => x.id !== p.id), p].sort((a, b) => a.name.localeCompare(b.name)));
+    const changed = patient?.id !== p.id || form === "edit";
+    setPatient(p);
+    if (changed && form === "edit") reset(); // allergies etc. may have changed: old AI draft is stale
+    setForm("none");
+  };
+
+  const shown = patients.filter((p) => p.name.toLowerCase().includes(search.toLowerCase()));
 
   return (
     <div className="app">
       <aside>
+        <div className="me">
+          {me.picture && <img src={me.picture} alt="" referrerPolicy="no-referrer" />}
+          <div>
+            <b>{me.name}</b>
+            <small>{me.email}</small>
+          </div>
+        </div>
+        <div className="me-actions">
+          <button className="link plain" onClick={() => setForm("profile")}>Profile</button>
+          <button className="link plain" onClick={onLogout}>Sign out</button>
+        </div>
         <h2>Patients</h2>
-        {patients.map((p) => (
+        <button className="primary wide" onClick={() => setForm("add")}>+ Add patient</button>
+        <input className="search" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        {shown.map((p) => (
           <button key={p.id} className={"pt" + (patient?.id === p.id ? " on" : "")}
             onClick={() => { setPatient(p); setComplaint(""); reset(); }}>
             <b>{p.name}</b><span>{p.age}y · {p.sex}{p.pregnant ? " · pregnant" : ""}</span>
           </button>
         ))}
+        {shown.length === 0 && <p className="muted"><small>No patients found.</small></p>}
       </aside>
 
       <main>
         <h1>Clinic AI <small>doctor assistant · AI drafts, doctor decides</small></h1>
         {error && <div className="err">{error}</div>}
-        {!patient ? <p>Select a patient.</p> : (
+        {!patient ? <p>Select a patient, or add a new one.</p> : (
           <>
             <section className="card">
-              <b>{patient.name}</b> · {patient.age}y · {patient.weight_kg} kg
+              <div className="row">
+                <span><b>{patient.name}</b> · {patient.age}y · {patient.weight_kg} kg</span>
+                <button className="link plain" onClick={() => setForm("edit")}>Edit patient</button>
+              </div>
               <div className="tags">
                 <span className="tag red">Allergies: {patient.allergies.join(", ") || "none"}</span>
                 <span className="tag">Conditions: {patient.conditions.join(", ") || "none"}</span>
@@ -91,7 +131,7 @@ export default function App() {
                 {visits.map((v) => (
                   <div key={v.id} className="visit">
                     <div className="row">
-                      <b>{v.issued_at}</b>
+                      <span><b>{v.issued_at}</b> <small className="muted">{v.doctor}</small></span>
                       <a href={v.pdf_url} target="_blank" rel="noreferrer">PDF</a>
                     </div>
                     <div>{v.complaint}</div>
@@ -174,6 +214,27 @@ export default function App() {
           </>
         )}
       </main>
+
+      {form === "add" && <PatientForm onSaved={saved} onCancel={() => setForm("none")} onAuthLost={onAuthLost} />}
+      {form === "edit" && patient && (
+        <PatientForm patient={patient} onSaved={saved} onCancel={() => setForm("none")} onAuthLost={onAuthLost} />
+      )}
+      {form === "profile" && (
+        <ProfileForm doctor={me} onSaved={(d) => { onMe(d); setForm("none"); }} onCancel={() => setForm("none")} />
+      )}
     </div>
   );
+}
+
+export default function App() {
+  const [me, setMe] = useState<Doctor | null | undefined>(undefined); // undefined = checking session
+
+  useEffect(() => { api.getMe().then(setMe).catch(() => setMe(null)); }, []);
+
+  const logout = async () => { await api.logout().catch(() => undefined); setMe(null); };
+
+  if (me === undefined) return null;
+  if (me === null) return <Login onLogin={setMe} />;
+  if (!me.profile_complete) return <ProfileForm doctor={me} required onSaved={setMe} />;
+  return <Workspace me={me} onMe={setMe} onLogout={logout} onAuthLost={() => setMe(null)} />;
 }

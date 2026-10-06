@@ -15,8 +15,11 @@ class Doctor(Base):
     __tablename__ = "doctors"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
-    reg_no: Mapped[str] = mapped_column(String(60))
-    clinic: Mapped[str] = mapped_column(String(160))
+    reg_no: Mapped[str] = mapped_column(String(60), default="")
+    clinic: Mapped[str] = mapped_column(String(160), default="")
+    email: Mapped[str | None] = mapped_column(String(200), unique=True, nullable=True)
+    google_sub: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    picture: Mapped[str | None] = mapped_column(String(400), nullable=True)
 
 
 class Patient(Base):
@@ -30,6 +33,9 @@ class Patient(Base):
     allergies: Mapped[list] = mapped_column(JSON, default=list)
     conditions: Mapped[list] = mapped_column(JSON, default=list)
     current_meds: Mapped[list] = mapped_column(JSON, default=list)
+    created_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=_now, nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Medicine(Base):

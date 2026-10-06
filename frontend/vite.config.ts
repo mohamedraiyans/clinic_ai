@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: { "/api": "http://api:8000" },
-    watch: { usePolling: true, interval: 300 }, // bind mounts on Windows send no file events
+    // bind mounts on Windows send no file events, so poll (slowly, to keep CPU low)
+    watch: { usePolling: true, interval: 1000, ignored: ["**/node_modules/**"] },
   },
 });
