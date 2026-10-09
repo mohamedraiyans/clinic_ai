@@ -162,7 +162,7 @@ backend/
 
 ### How to run them
 
-You need Docker running (the same Docker you use for the app). From the project folder:
+This runs the tests on **your computer**. To run them on GitHub's servers instead, see [How to run the tests on GitHub's server](#how-to-run-the-tests-on-githubs-server). You need Docker running (the same Docker you use for the app). From the project folder:
 
 ```bash
 docker compose --profile test run --rm tests
@@ -225,6 +225,33 @@ python -m pytest
 ```
 
 The database name must end in `_test`. It is created automatically if it does not exist.
+
+### How to run the tests on GitHub's server
+
+The command in "How to run them" runs on **your computer**. GitHub can run the same tests on **its own servers**. There are three ways to start it:
+
+| Way | Steps |
+|---|---|
+| **Push code** (automatic) | `git commit` and `git push` to `main`. GitHub starts the tests by itself |
+| **Run workflow button** (no code change) | 1. Open the repo's **Actions** tab. 2. Click **tests** in the left list. 3. Click the **Run workflow** drop-down on the right. 4. Leave "Make the backend job fail on purpose" unticked and click the green **Run workflow** button |
+| **Wait for the schedule** | it also runs by itself every 6 hours |
+
+**Where to see the result**
+- **GitHub website:** Actions tab, click the newest run, then **backend**, then the step **`python -m pytest`**. The log ends with `177 passed`. A green ✓ means everything passed, a red ✗ means something failed. Click it and read the failing step.
+- **VS Code:** install the *GitHub Actions* extension and sign in. The GitHub Actions panel lists the runs for the current branch. Use its refresh button if a new run does not show up.
+
+A run takes about 2 minutes. If the screen shows a yellow spinner, it is still running.
+
+**Local vs GitHub**
+
+| | Local command | GitHub |
+|---|---|---|
+| Runs on | your computer, in Docker | GitHub's Linux servers |
+| Starts when | you type the command | you push, press the button, or the schedule fires |
+| Tests | the files on your disk, including changes you have not committed | only what you pushed |
+| Result appears in | your terminal | the Actions tab and the VS Code panel |
+
+Because GitHub only sees what you pushed, a test can pass locally and fail on GitHub if you forgot to push a file. Run both before you trust a change.
 
 ### Automatic runs and failure alerts (GitHub Actions)
 
