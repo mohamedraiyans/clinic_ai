@@ -226,6 +226,35 @@ python -m pytest
 
 The database name must end in `_test`. It is created automatically if it does not exist.
 
+### Automatic runs and failure alerts (GitHub Actions)
+
+The same tests run on GitHub without anyone pressing a button. The workflow is `.github/workflows/tests.yml`.
+
+| When | What runs |
+|---|---|
+| every `git push` and every pull request | backend tests (177) and the frontend TypeScript check |
+| **every 6 hours** (00:00, 06:00, 12:00, 18:00 UTC) | the same checks, even if nobody changed anything. This catches problems caused by outside changes, such as a new library version |
+| when you click **Run workflow** | the same checks, on demand |
+
+Times are UTC (Sweden is UTC+1 in winter and UTC+2 in summer). GitHub may start a scheduled run a few minutes late. Scheduled runs only happen on the `main` branch.
+
+**What happens when a run fails**
+1. The run shows a red ✗ in the Actions tab and in the VS Code GitHub Actions panel.
+2. The `alert` job opens a GitHub issue called **"Automated tests are failing"** with the label `ci-failure`. It is **assigned to the person who triggered the run** (for a push, whoever pushed; for a scheduled run, whoever last edited the schedule line). Linked in the issue: the run and which job failed.
+3. **GitHub emails the assignee** (the address on their GitHub account). No email password or secret is stored anywhere.
+4. While the problem remains, later failures add a comment to the same issue instead of opening new ones, so the 6-hourly runs do not flood you.
+5. When a run passes again, the issue is **closed automatically** with a link to the passing run.
+
+**One-time setup for the email.** In GitHub open **Settings → Notifications**. Under **Actions**, tick **Email** and choose **Send notifications for failed workflows only**. Under **Subscriptions**, keep email on for "Participating, @mentions and custom".
+
+**Test the alert without breaking anything**
+1. On GitHub open **Actions → tests → Run workflow**.
+2. Tick **"Make the backend job fail on purpose"** and run it.
+3. After about 2 minutes the run is red, an issue appears and the email arrives.
+4. Run the workflow again with the box unticked. The run turns green and the issue closes itself.
+
+To stop the scheduled runs, delete the `schedule:` lines in `tests.yml`. To change how often, edit the cron line (`0 */6 * * *` means minute 0 of every 6th hour).
+
 ### Why the tests are safe to run
 
 - **Own database.** Tests use `clinic_test` (the name must end in `_test`, or the tests refuse to start), never your real data. Every test starts from the same seeded data.
@@ -244,7 +273,7 @@ The database name must end in `_test`. It is created automatically if it does no
 | `test_pdf.py` | PDF content, long text wrapping, page breaks keep the signature on the last page |
 | `test_startup.py` | database upgrade on startup and seed data are repeatable |
 
-GitHub Actions runs the same tests (plus a TypeScript type-check of the frontend) on every push and pull request. See `.github/workflows/tests.yml`.
+GitHub Actions runs the same tests (plus a TypeScript type-check of the frontend) on every push and pull request, **and automatically every 6 hours**. A failure opens an issue and emails the person who triggered the run. See [Automatic runs and failure alerts](#automatic-runs-and-failure-alerts-github-actions) and `.github/workflows/tests.yml`.
 
 **When you change something**
 - Changed a safety rule or the formulary: update `test_safety.py` first, then the code.

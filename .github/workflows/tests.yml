@@ -1,5 +1,19 @@
 name: tests
-on: [push, pull_request]
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 */6 * * *"   # every 6 hours (UTC)
+  workflow_dispatch:         # "Run workflow" button in the Actions tab
+    inputs:
+      simulate_failure:
+        description: "Make the backend job fail on purpose, to test the failure alert"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
 
 jobs:
   backend:
@@ -29,6 +43,11 @@ jobs:
           cache-dependency-path: backend/requirements*.txt
       - run: pip install -r requirements.txt -r requirements-dev.txt
       - run: python -m pytest
+      - name: Simulated failure (manual runs only)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.simulate_failure }}
+        run: |
+          echo "Failing on purpose to test the alert."
+          exit 1
 
   frontend-types:
     runs-on: ubuntu-latest
@@ -42,3 +61,40 @@ jobs:
           node-version: 20
       - run: npm install
       - run: npx tsc --noEmit
+
+  # Tells a human. On failure: opens (or updates) one GitHub issue assigned to whoever triggered the
+  # run, and GitHub emails the assignee. When tests pass again the issue is closed automatically.
+  # Only for the main branch, and never for pull requests (they get a read-only token).
+  alert:
+    needs: [backend, frontend-types]
+    if: ${{ always() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      ACTOR: ${{ github.actor }}
+      EVENT: ${{ github.event_name }}
+    steps:
+      - name: Open or update the failure issue
+        if: ${{ needs.backend.result == 'failure' || needs['frontend-types'].result == 'failure' }}
+        run: |
+          gh label create ci-failure --color B60205 --description "Automated tests failed" 2>/dev/null || true
+          body=$(printf 'The automated tests failed.\n\n- Trigger: %s\n- Started by: @%s\n- backend: %s\n- frontend-types: %s\n\nSee the run for details: %s' \
+            "$EVENT" "$ACTOR" "${{ needs.backend.result }}" "${{ needs['frontend-types'].result }}" "$RUN_URL")
+          existing=$(gh issue list --label ci-failure --state open --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "Automated tests are failing" --label ci-failure --body "$body" --assignee "$ACTOR" \
+              || gh issue create --title "Automated tests are failing" --label ci-failure --body "$body"
+          fi
+
+      - name: Close the issue when tests pass again
+        if: ${{ needs.backend.result == 'success' && needs['frontend-types'].result == 'success' }}
+        run: |
+          for n in $(gh issue list --label ci-failure --state open --json number --jq '.[].number'); do
+            gh issue close "$n" --comment "Tests are passing again: $RUN_URL"
+          done
