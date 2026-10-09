@@ -60,10 +60,11 @@ def _doctor_from_cookie(session: str | None, db: Session) -> Doctor | None:
     if not session:
         return None
     try:
-        sub = jwt.decode(session, _secret(), algorithms=["HS256"])["sub"]
-    except jwt.PyJWTError:
+        sub = int(jwt.decode(session, _secret(), algorithms=["HS256"])["sub"])
+    except (jwt.PyJWTError, KeyError, ValueError, TypeError):
+        # not a session token (e.g. a PDF link token has no "sub"): treat as signed out, never crash
         return None
-    return db.get(Doctor, int(sub))
+    return db.get(Doctor, sub)
 
 
 def optional_doctor(session: str | None = Cookie(default=None), db: Session = Depends(get_db)) -> Doctor | None:

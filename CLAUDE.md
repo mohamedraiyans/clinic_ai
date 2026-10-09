@@ -14,6 +14,7 @@ docker compose up -d --build     # start everything (http://localhost:5173, API 
 docker compose logs -f api       # backend logs
 docker compose down              # stop (add -v to wipe the database)
 cd frontend && npx tsc --noEmit  # type-check the frontend
+docker compose --profile test run --rm tests   # backend test suite (about 1 minute)
 ```
 Backend and `frontend/src` are bind-mounted, so edits reload automatically. Rebuild after changing `requirements.txt` or `package.json`. The DB is created and seeded on API startup (`backend/app/seed.py`).
 
@@ -34,7 +35,8 @@ Backend and `frontend/src` are bind-mounted, so edits reload automatically. Rebu
 5. **Nothing is signed without explicit doctor approval**, and AI calls and signatures go into `audit_log`.
 6. **Every `/api` route needs `Depends(current_doctor)`** except `/api/auth/*`, `/api/verify/{id}` and the HTML page `/verify/{id}` (public on purpose: QR target; must never show patient name or other identity; escape everything with `html.escape`). Only emails in `ALLOWED_DOCTOR_EMAILS` may sign in; a Google account alone is not enough. `DEV_LOGIN=1` is local testing only and must be `0` in production.
 7. **Patient edits go to `audit_log`** with a before/after diff, because allergies and current medicines drive the safety checks. Doctors can't sign without `reg_no` and `clinic` in their profile.
-8. **Never commit or print `.env`.** It holds the API keys and `SIGNING_SECRET`. `.env.example` is the template.
+8. **Run the test suite before saying work is done, and keep it green.** Tests live in `backend/tests/`, use their own `clinic_test` database (conftest refuses any name not ending in `_test`), and fake the LLM and Google, so never make a test call a real provider. A new route must require login or be added to `PUBLIC_API_ROUTES` in `test_auth.py`. When fixing a bug, add a test that fails without the fix. Changing a safety rule means updating `test_safety.py` too.
+9. **Never commit or print `.env`.** It holds the API keys and `SIGNING_SECRET`. `.env.example` is the template.
 
 ## Known MVP shortcuts (good next tasks)
 - Patients are shared by all allowlisted doctors (`created_by` records who added them). Per-doctor or per-clinic patient scoping, roles (admin who manages the allowlist) and a patient archive/delete flow are not built. Google login needs a real OAuth client (`GOOGLE_CLIENT_ID/SECRET`) and was not tested against Google itself, only via dev login.
@@ -42,5 +44,5 @@ Backend and `frontend/src` are bind-mounted, so edits reload automatically. Rebu
 - Vite polls for file changes (bind mounts on Windows send no events). `vite.config.ts` is baked into the web image, so rebuild `web` after editing it.
 - Signature is HMAC-SHA256 (`SIGNING_SECRET`) plus a typed name. Real PAdES/certificate signing is future work.
 - Formulary and interactions are a small demo set. Replace them with the clinic's real formulary or a drug-interaction API.
-- Add tests (safety rules, `/api/analyze` mocking the LLM), Alembic migrations, and an edit/search UI for patients.
+- Not tested yet: frontend components, end-to-end browser flow, real-model answer quality. Also not built: Alembic migrations (startup uses the `MIGRATIONS` list) and a patient archive/delete flow.
 - Later ideas: voice dictation (Whisper), guideline RAG, patient app, pharmacy e-prescription, EHR integration.

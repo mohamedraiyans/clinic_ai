@@ -137,6 +137,38 @@ docker-compose.yml   db + api + web
 | GET | `/verify/{id}` | public page the QR code opens: green "Authentic" with doctor, registration, date and medicines (no patient identity), or red "Not valid" |
 | GET | `/api/verify/{id}` | same check as JSON |
 
+## Testing
+
+177 automated backend tests run in about a minute. They check the safety rules, how the app handles the AI's answers, login and permissions, patient editing, prescription signing and verification, and the PDF.
+
+```bash
+docker compose --profile test run --rm tests
+```
+
+What makes them safe and repeatable:
+- **Own database.** Tests use `clinic_test` (the name must end in `_test`, or the tests refuse to start), never your real data. Every test starts from the same seeded data.
+- **No real AI.** Azure and Groq keys are removed while testing and the model is replaced by a scripted fake. Tests are free, fast and give the same result every time.
+- **Google is faked too**, so the whole Google sign-in flow (allowlist, bad state, unverified email, Google being down) is tested without Google.
+
+| File | What it protects |
+|---|---|
+| `test_safety.py` | allergy, pregnancy, minimum age and interaction rules for every medicine; formulary data sanity |
+| `test_analyze.py` | AI answers are filtered by the safety rules; medicines outside the formulary are dropped; questions flow; **no patient name or ID is sent to the model**; Azure-to-Groq fallback |
+| `test_auth.py` | **every API route requires login** except a fixed public list (the test fails if a new open route appears); allowlist; forged, expired and garbage sessions; Google flow; doctor profile |
+| `test_patients.py` | validation and cleaning; every add/edit is audited with a before/after diff; visit history |
+| `test_signing.py` | the server re-checks safety on signing; any change to medicines, dose, date or patient breaks verification; the verify page escapes HTML and never shows patient details; PDF links are scoped and expire |
+| `test_pdf.py` | PDF content, long text wrapping, page breaks keep the signature on the last page |
+| `test_startup.py` | database upgrade on startup and seed data are repeatable |
+
+GitHub Actions runs the same tests (plus a TypeScript type-check of the frontend) on every push and pull request. See `.github/workflows/tests.yml`.
+
+**When you change something**
+- Changed a safety rule or the formulary: update `test_safety.py` first, then the code.
+- Added an API route: it must require login. If it is meant to be public, add it to `PUBLIC_API_ROUTES` in `test_auth.py` and say why in the commit.
+- Fixed a bug: add a test that fails without the fix. (The first run of this suite found two real bugs this way: a malformed session cookie caused a server error, and a very long unbroken word ran off the PDF page.)
+
+What the tests do **not** cover: how good the real model's medical suggestions are (they vary and cost money, so check them by hand or with a small separate evaluation), and how the screens look.
+
 ## Known limitations (MVP)
 
 - All allowlisted doctors share one patient list. There are no roles (admin) and no patient archive or delete.
@@ -144,7 +176,7 @@ docker-compose.yml   db + api + web
 - The signature is an HMAC plus a typed name, not a certificate-based digital signature (PAdES).
 - The formulary and interaction list are a small demo set. A real clinic needs its own formulary or a drug-interaction database.
 - A visit is saved only when a prescription is signed.
-- No automated tests yet.
+- No frontend component or end-to-end tests yet (only a type-check).
 
 ## Roadmap
 
@@ -154,4 +186,4 @@ docker-compose.yml   db + api + web
 - Real drug database and interaction checks
 - Hard-stop rule for dangerous vitals (emergency banner, no medicines until confirmed)
 - Voice dictation, guideline RAG, patient app, pharmacy e-prescription, EHR integration
-- Tests for the safety rules and the AI endpoint, and database migrations (Alembic)
+- Frontend component tests, one end-to-end test (Playwright), a small real-model evaluation set, secret scanning in CI, and database migrations (Alembic)

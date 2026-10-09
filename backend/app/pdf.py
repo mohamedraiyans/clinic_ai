@@ -98,6 +98,15 @@ def _wrap(text: str, max_width: float, font: str = "Helvetica", size: int = 10) 
     """Wrap by real rendered width, so long text never runs past the margin."""
     lines, cur = [], ""
     for word in text.split():
+        while stringWidth(word, font, size) > max_width:  # one word wider than a line: hard-split it
+            if cur:
+                lines.append(cur)
+                cur = ""
+            cut = len(word) - 1
+            while cut > 1 and stringWidth(word[:cut], font, size) > max_width:
+                cut -= 1
+            lines.append(word[:cut])
+            word = word[cut:]
         trial = f"{cur} {word}".strip()
         if cur and stringWidth(trial, font, size) > max_width:
             lines.append(cur)
