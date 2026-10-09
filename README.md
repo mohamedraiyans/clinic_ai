@@ -141,14 +141,98 @@ docker-compose.yml   db + api + web
 
 177 automated backend tests run in about a minute. They check the safety rules, how the app handles the AI's answers, login and permissions, patient editing, prescription signing and verification, and the PDF.
 
+### Where the tests are
+
+```
+backend/
+  tests/                  <- all test files live here
+    conftest.py           shared setup: test database, fake AI, logged-in doctor, helpers
+    test_safety.py        allergy / pregnancy / age / interaction rules
+    test_analyze.py       AI answers, formulary filter, privacy, Azure -> Groq fallback
+    test_auth.py          login gate, allowlist, sessions, Google flow, doctor profile
+    test_patients.py      add / edit patients, audit trail, visit history
+    test_signing.py       signing, verify page, tamper detection, PDF links
+    test_pdf.py           PDF content, wrapping, page breaks
+    test_startup.py       database upgrade on startup, seed data
+  pytest.ini              pytest settings
+  requirements-dev.txt    test-only packages (pytest, pypdf)
+.github/workflows/
+  tests.yml               runs the tests automatically on GitHub for every push
+```
+
+### How to run them
+
+You need Docker running (the same Docker you use for the app). From the project folder:
+
 ```bash
 docker compose --profile test run --rm tests
 ```
 
-What makes them safe and repeatable:
+Wait for the last line, for example `177 passed in 85.58s`. Do not press Ctrl+C before it appears, or the run is cut short and only shows the tests done so far.
+
+Run just one file, or just one test (add `-v` to see every test name):
+
+```bash
+docker compose --profile test run --rm tests sh -c "pip install -q --root-user-action=ignore -r requirements-dev.txt && python -m pytest tests/test_safety.py -v"
+docker compose --profile test run --rm tests sh -c "pip install -q --root-user-action=ignore -r requirements-dev.txt && python -m pytest -k penicillin -v"
+```
+
+`-k penicillin` runs every test whose name contains "penicillin".
+
+The `tests` service is not started by a normal `docker compose up`. It only runs when you ask for it with `--profile test`. It does not need the app to be running, only the `db` container, which starts by itself.
+
+### How to read the result
+
+| Output | Meaning |
+|---|---|
+| `.` | one test passed |
+| `F` | one test failed. The details are printed at the end: which test, which line, expected vs actual value |
+| `E` | the test could not run (setup error) |
+| `177 passed` | everything is fine |
+| `2 failed, 175 passed` | something broke. Read the `FAILED tests/...` lines at the bottom |
+
+Test names read like sentences, for example `test_penicillin_allergy_blocks_amoxicillin`, so a failure tells you which rule broke.
+
+### How to add a test
+
+1. Open the file for that area, for example `backend/tests/test_signing.py`.
+2. Add a function whose name starts with `test_`. Use the ready-made fixtures from `conftest.py`:
+   - `client`: a signed-in doctor with a complete profile
+   - `anon`: a visitor who is not signed in
+   - `pid`: patient ids by name, e.g. `pid["Aisha Rahman"]`
+   - `fake_ai`: the pretend AI. Script its answer with `fake_ai.ready(med("Amoxicillin"))`
+   - `db`: a direct database session, for checking what was stored
+
+```python
+def test_penicillin_allergy_blocks_amoxicillin(client, pid, fake_ai):
+    fake_ai.ready(med("Amoxicillin"), med("Paracetamol"))
+    result = analyze(client, pid["Aisha Rahman"]).json()   # Aisha is allergic to penicillin
+    assert [m["name"] for m in result["medicines"]] == ["Paracetamol"]
+```
+
+3. Run `docker compose --profile test run --rm tests` and check it passes.
+4. A good habit: make the test fail first (break the code on purpose), then restore it. That proves the test really protects something.
+
+### Running without Docker (optional)
+
+If you have Python 3.12 and a Postgres server:
+
+```bash
+cd backend
+pip install -r requirements.txt -r requirements-dev.txt
+export TEST_DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/clinic_test   # Windows PowerShell: $env:TEST_DATABASE_URL="..."
+python -m pytest
+```
+
+The database name must end in `_test`. It is created automatically if it does not exist.
+
+### Why the tests are safe to run
+
 - **Own database.** Tests use `clinic_test` (the name must end in `_test`, or the tests refuse to start), never your real data. Every test starts from the same seeded data.
 - **No real AI.** Azure and Groq keys are removed while testing and the model is replaced by a scripted fake. Tests are free, fast and give the same result every time.
 - **Google is faked too**, so the whole Google sign-in flow (allowlist, bad state, unverified email, Google being down) is tested without Google.
+
+### What each file protects
 
 | File | What it protects |
 |---|---|
