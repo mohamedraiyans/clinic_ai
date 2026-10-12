@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import * as api from "./api";
 import type { AnalyzeResult, Doctor, Medicine, Patient, QA, Visit } from "./api";
+import AskPanel from "./AskPanel";
 import Login from "./Login";
 import PatientForm from "./PatientForm";
 import ProfileForm from "./ProfileForm";
@@ -143,6 +144,8 @@ function Workspace({ me, onMe, onLogout, onAuthLost }: WorkspaceProps) {
                 ))}
               </details>
             </section>
+
+            <AskPanel key={patient.id} patientId={patient.id} onAuthLost={onAuthLost} />
 
             <section className="card">
               <label>Complaint &amp; examination findings</label>

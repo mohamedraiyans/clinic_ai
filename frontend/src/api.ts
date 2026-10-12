@@ -57,6 +57,12 @@ export const createPatient = (p: PatientInput) => req<Patient>("/api/patients", 
 export const updatePatient = (id: number, p: PatientInput) => req<Patient>(`/api/patients/${id}`, "PUT", p);
 export const getHistory = (id: number) => req<Visit[]>(`/api/patients/${id}/history`);
 
+export interface AgentStep { tool: string; args: Record<string, unknown>; result: Record<string, unknown> }
+export interface AgentReply { answer: string; steps: AgentStep[]; provider: string; stopped: boolean }
+export interface ChatTurn { role: "user" | "assistant"; content: string }
+export const askAgent = (patient_id: number, question: string, history: ChatTurn[]) =>
+  req<AgentReply>("/api/agent/ask", "POST", { patient_id, question, history });
+
 export const analyze = (patient_id: number, complaint: string, qa: QA[]) =>
   req<AnalyzeResult>("/api/analyze", "POST", { patient_id, complaint, qa });
 export const sign = (patient_id: number, complaint: string, assessments: Assessment[], items: Medicine[]) =>

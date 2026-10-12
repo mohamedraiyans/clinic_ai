@@ -56,3 +56,23 @@ label small { font-weight: 400; color: #667; }
 .wide { width: 100%; margin: 0 0 8px; }
 .search { margin-bottom: 8px; }
 @media (max-width: 720px) { .app { flex-direction: column; } aside { width: 100%; border-right: 0; border-bottom: 1px solid #dde3ea; } .grid { grid-template-columns: 1fr; } }
+/* assistant chat */
+.ask-panel summary { cursor: pointer; }
+.chat { display: flex; flex-direction: column; gap: 0.6rem; margin: 0.8rem 0; max-height: 26rem; overflow-y: auto; }
+.ideas { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.idea { border: 1px solid #c8d0da; background: #fff; border-radius: 999px; padding: 0.35rem 0.8rem; font: inherit; font-size: 13px; cursor: pointer; color: #1b2430; }
+.idea:hover:not(:disabled) { background: #eef5ff; border-color: #1d6fe0; }
+.bubble { max-width: 92%; padding: 0.55rem 0.8rem; border-radius: 10px; }
+.bubble.user { align-self: flex-end; background: #1d6fe0; color: #fff; }
+.bubble.assistant { align-self: flex-start; background: #f1f4f8; }
+.bubble .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.steps { list-style: none; margin: 0.5rem 0 0; padding: 0; font-size: 12.5px; color: #4a5565; }
+.steps summary { cursor: pointer; padding: 0.15rem 0; }
+.steps pre { margin: 0.25rem 0; padding: 0.5rem; background: #fff; border: 1px solid #dde3ea; border-radius: 6px; overflow-x: auto; font-size: 12px; }
+.badge { display: inline-block; margin-left: 0.5rem; padding: 0 0.45rem; border-radius: 4px; font-size: 11.5px; font-weight: 700; }
+.badge.ok { background: #dcf5e4; color: #14733a; }
+.badge.warn { background: #fff1cc; color: #8a5a00; }
+.badge.bad { background: #fde8e6; color: #b3261e; }
+.ask-row { display: flex; gap: 0.5rem; }
+.ask-row .primary { margin-top: 0; }
+.ask-note { margin: 0.5rem 0 0; }

@@ -6,7 +6,7 @@ AI assistant for doctors. The doctor enters a patient's complaint and exam findi
 - `backend/`: Python 3.12, FastAPI, SQLAlchemy, Postgres, ReportLab (PDF)
 - `frontend/`: React + TypeScript (Vite), proxies `/api` to the api container
 - Docker Compose runs `db` (Postgres 16), `api` (:8000), `web` (:5173)
-- LLMs go through the OpenAI SDK: Azure OpenAI first (`AZURE_OPENAI_*`), Groq as fallback (`GROQ_*`)
+- LLMs go through the OpenAI SDK: Azure OpenAI first (`AZURE_OPENAI_*`), Groq as fallback (`GROQ_*`). Groq retires models over time (llama-3.3-70b-versatile is gone); current default `openai/gpt-oss-120b`
 
 ## Commands
 ```bash
@@ -19,9 +19,10 @@ docker compose --profile test run --rm tests   # backend test suite (about 1 min
 Backend and `frontend/src` are bind-mounted, so edits reload automatically. Rebuild after changing `requirements.txt` or `package.json`. The DB is created and seeded on API startup (`backend/app/seed.py`).
 
 ## Layout
-- `backend/app/main.py`: endpoints (`/api/patients` GET/POST/PUT, `/api/patients/{id}/history`, `/api/analyze`, `/api/prescriptions`, `/api/prescriptions/{id}/pdf`, `/api/verify/{id}`). Also holds the `MIGRATIONS` list: `create_all` never alters tables, so add new columns there as idempotent `ALTER TABLE ... IF NOT EXISTS`.
+- `backend/app/main.py`: endpoints (`/api/patients` GET/POST/PUT, `/api/patients/{id}/history`, `/api/analyze`, `/api/agent/ask`, `/api/prescriptions`, `/api/prescriptions/{id}/pdf`, `/api/verify/{id}`). Also holds the `MIGRATIONS` list: `create_all` never alters tables, so add new columns there as idempotent `ALTER TABLE ... IF NOT EXISTS`.
 - `backend/app/auth.py`: Google OAuth login, allowlist, JWT session cookie, doctor profile, short-lived PDF link tokens, `current_doctor` dependency
 - `backend/app/ai.py`: system prompt, provider fallback, JSON-mode call
+- `backend/app/agent.py`, `agent_demo.py`, `frontend/src/AskPanel.tsx`: tool-calling assistant. On screen via `POST /api/agent/ask` (login required, history cleaned server-side) and as a CLI. Hand-written loop, 4 read-only tools, patient fixed by the caller. Rules: tools never write; the model never sees a name or ID or chooses the patient; safety verdicts come from `safety.py`; never let the model call a medicine "safe". Run: `docker compose exec api python -m app.agent_demo --patient 1 "question"`
 - `backend/app/safety.py`: deterministic checks (allergy, pregnancy, min age, interactions)
 - `backend/app/pdf.py`: prescription PDF with signature block and QR code
 - `backend/app/models.py`, `seed.py`: tables and demo data (4 patients, 17 medicines, 1 demo doctor)

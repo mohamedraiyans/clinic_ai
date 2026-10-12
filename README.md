@@ -12,7 +12,7 @@ An AI assistant for doctors. The doctor types a patient's complaint and exam fin
 | Backend | Python 3.12, FastAPI, SQLAlchemy |
 | Database | PostgreSQL 16 |
 | PDF | ReportLab (with QR code) |
-| AI | Azure OpenAI (primary), Groq / Llama 3.3 70B (fallback), through the OpenAI SDK |
+| AI | Azure OpenAI (primary), Groq / gpt-oss-120b (fallback), through the OpenAI SDK |
 | Runtime | Docker Compose |
 
 ## Quick start
@@ -132,14 +132,64 @@ docker-compose.yml   db + api + web
 | PUT | `/api/patients/{id}` | edit a patient |
 | GET | `/api/patients/{id}/history` | a patient's signed visits |
 | POST | `/api/analyze` | AI draft or follow-up questions |
+| POST | `/api/agent/ask` | ask the read-only assistant a question about one patient (tool calling) |
 | POST | `/api/prescriptions` | approve, sign, save |
 | GET | `/api/prescriptions/{id}/pdf` | signed PDF |
 | GET | `/verify/{id}` | public page the QR code opens: green "Authentic" with doctor, registration, date and medicines (no patient identity), or red "Not valid" |
 | GET | `/api/verify/{id}` | same check as JSON |
 
+## Ask the assistant: a doctor's chat that calls tools
+
+A **tool-calling agent** the doctor can talk to **on screen**. Select a patient, open the **Ask the assistant** card under the patient details, and ask in plain words (for example "Is amoxicillin safe for this patient?" and then "What about azithromycin instead?"). The model may call read-only tools to look facts up before it answers. Under each answer the screen lists the tools it used, with a badge (Blocked, Warning, Not blocked) and the raw result on click. The same agent also runs as a command-line demo. The loop is written by hand with the OpenAI-compatible API (no agent SDK), so every step is visible.
+
+- **Screen:** `frontend/src/AskPanel.tsx`. Follow-up questions work because the last 6 chat messages are sent along. Each patient starts a fresh conversation.
+- **API:** `POST /api/agent/ask` with `patient_id`, `question` (1 to 1000 characters) and `history`. It needs a signed-in doctor. History is cleaned on the server: only plain `user` and `assistant` text is kept, so a browser cannot inject `system` or `tool` messages. Tool results are never replayed, the model has to look facts up again.
+- **Command line:** see below.
+
+```
+question → model asks for a tool → our code runs it → result goes back to the model → … → answer
+```
+
+Run it (the app containers must be up):
+
+```bash
+docker compose exec api python -m app.agent_demo --list                        # patient ids
+docker compose exec api python -m app.agent_demo --patient 1 "Is Amoxicillin safe for this patient?"
+docker compose exec -it api python -m app.agent_demo --patient 2               # type several questions
+```
+
+Example (patient 1 is allergic to penicillin). Each tool call is printed:
+
+```
+  step 1: model called check_medicine_safety({"medicine_name": "Amoxicillin"})
+          -> {"found": true, "medicine": "Amoxicillin", "blocked": true, "warnings": [... allergic to penicillin]}
+Answer (groq):
+Amoxicillin is blocked for this patient because they are allergic to penicillin. (Used check_medicine_safety)
+```
+
+| Tool | What it does |
+|---|---|
+| `get_patient_summary` | age, sex, weight, pregnancy, allergies, conditions, current medicines (no name, no ID) |
+| `list_recent_visits` | the patient's last signed prescriptions |
+| `check_medicine_safety` | runs the same `safety.py` rules used when signing |
+| `list_safe_medicines` | formulary medicines the rules do not block (**not the same as safe**) |
+
+Rules it keeps (all covered by tests in `backend/tests/test_agent.py`):
+- **Read-only.** There is no tool that edits, deletes, creates or signs anything.
+- **The app chooses the patient, not the model.** The model never sees a name or ID, and cannot ask for another patient.
+- **Safety verdicts come from code** (`safety.py`). The model only explains them, and the prompt forbids calling a medicine "safe".
+- **Limits:** at most 6 rounds of tool calls and 4 tool calls per round. A bad tool name, bad JSON or bad arguments become an error message the model can read and recover from.
+- **Audited.** Every question is written to `audit_log` with the tools used.
+- The command line tries Groq first, then Azure OpenAI (`--provider azure` to reverse it). The screen follows the project's normal order: Azure first, Groq as fallback.
+- **Privacy:** the model never sees the patient's name or ID. What the doctor types in the question box is free text and is not scrubbed, which is why the box says not to type the patient's name.
+
+It is still a demo of the idea, not a finished feature: its answers are only as good as the model and the simple demo rules behind the tools, and there is no per-doctor rate limit on questions yet.
+
+**Groq models change.** Groq retired `llama-3.3-70b-versatile`, which made the Groq fallback fail silently. The default is now `openai/gpt-oss-120b`. Set `GROQ_MODEL` in `.env`, and list what your key can use with `client.models.list()`.
+
 ## Testing
 
-177 automated backend tests run in about a minute. They check the safety rules, how the app handles the AI's answers, login and permissions, patient editing, prescription signing and verification, and the PDF.
+236 automated backend tests run in about a minute and a half. They check the safety rules, how the app handles the AI's answers, login and permissions, patient editing, prescription signing and verification, and the PDF.
 
 ### Where the tests are
 
@@ -168,7 +218,7 @@ This runs the tests on **your computer**. To run them on GitHub's servers instea
 docker compose --profile test run --rm tests
 ```
 
-Wait for the last line, for example `177 passed in 85.58s`. Do not press Ctrl+C before it appears, or the run is cut short and only shows the tests done so far.
+Wait for the last line, for example `236 passed in 95.14s`. Do not press Ctrl+C before it appears, or the run is cut short and only shows the tests done so far.
 
 Run just one file, or just one test (add `-v` to see every test name):
 
@@ -188,7 +238,7 @@ The `tests` service is not started by a normal `docker compose up`. It only runs
 | `.` | one test passed |
 | `F` | one test failed. The details are printed at the end: which test, which line, expected vs actual value |
 | `E` | the test could not run (setup error) |
-| `177 passed` | everything is fine |
+| `236 passed` | everything is fine |
 | `2 failed, 175 passed` | something broke. Read the `FAILED tests/...` lines at the bottom |
 
 Test names read like sentences, for example `test_penicillin_allergy_blocks_amoxicillin`, so a failure tells you which rule broke.
@@ -237,7 +287,7 @@ The command in "How to run them" runs on **your computer**. GitHub can run the s
 | **Wait for the schedule** | it also runs by itself every 6 hours |
 
 **Where to see the result**
-- **GitHub website:** Actions tab, click the newest run, then **backend**, then the step **`python -m pytest`**. The log ends with `177 passed`. A green ✓ means everything passed, a red ✗ means something failed. Click it and read the failing step.
+- **GitHub website:** Actions tab, click the newest run, then **backend**, then the step **`python -m pytest`**. The log ends with `236 passed`. A green ✓ means everything passed, a red ✗ means something failed. Click it and read the failing step.
 - **VS Code:** install the *GitHub Actions* extension and sign in. The GitHub Actions panel lists the runs for the current branch. Use its refresh button if a new run does not show up.
 
 A run takes about 2 minutes. If the screen shows a yellow spinner, it is still running.
@@ -259,7 +309,7 @@ The same tests run on GitHub without anyone pressing a button. The workflow is `
 
 | When | What runs |
 |---|---|
-| every `git push` and every pull request | backend tests (177) and the frontend TypeScript check |
+| every `git push` and every pull request | backend tests (236) and the frontend TypeScript check |
 | **every 6 hours** (00:00, 06:00, 12:00, 18:00 UTC) | the same checks, even if nobody changed anything. This catches problems caused by outside changes, such as a new library version |
 | when you click **Run workflow** | the same checks, on demand |
 
@@ -299,6 +349,7 @@ To stop the scheduled runs, delete the `schedule:` lines in `tests.yml`. To chan
 | `test_signing.py` | the server re-checks safety on signing; any change to medicines, dose, date or patient breaks verification; the verify page escapes HTML and never shows patient details; PDF links are scoped and expire |
 | `test_pdf.py` | PDF content, long text wrapping, page breaks keep the signature on the last page |
 | `test_startup.py` | database upgrade on startup and seed data are repeatable |
+| `test_agent.py` | the tool-calling agent demo: the loop, bad tool calls from the model, the step limit, **read-only tools**, **no name or ID sent to the model**, provider fallback |
 
 GitHub Actions runs the same tests (plus a TypeScript type-check of the frontend) on every push and pull request, **and automatically every 6 hours**. A failure opens an issue and emails the person who triggered the run. See [Automatic runs and failure alerts](#automatic-runs-and-failure-alerts-github-actions) and `.github/workflows/tests.yml`.
 

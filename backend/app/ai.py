@@ -40,7 +40,7 @@ def _providers():
         p.append(("azure", client, os.environ["AZURE_OPENAI_DEPLOYMENT_NAME"]))
     if os.getenv("GROQ_API_KEY"):
         client = OpenAI(api_key=os.environ["GROQ_API_KEY"], base_url="https://api.groq.com/openai/v1")
-        p.append(("groq", client, os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")))
+        p.append(("groq", client, os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")))
     return p
 
 

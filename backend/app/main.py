@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from . import ai, auth, pdf, safety
+from . import agent, ai, auth, pdf, safety
 from .auth import current_doctor
 from .db import Base, SessionLocal, engine, get_db
 from .models import AuditLog, Doctor, Medicine, Patient, Prescription
@@ -213,6 +213,31 @@ def analyze(body: AnalyzeIn, db: Session = Depends(get_db), doctor: Doctor = Dep
                             "removed": result["removed"]}))
     db.commit()
     return result
+
+
+# ---------------------------------------------------------------- assistant chat
+
+class AskIn(BaseModel):
+    patient_id: int
+    question: str = Field(min_length=1, max_length=1000)
+    history: list[dict] = []  # earlier turns: [{"role": "user" | "assistant", "content": "..."}]
+
+
+@app.post("/api/agent/ask")
+def agent_ask(body: AskIn, db: Session = Depends(get_db), doctor: Doctor = Depends(current_doctor)):
+    """The doctor asks the read-only assistant a question about the selected patient."""
+    patient = db.get(Patient, body.patient_id)
+    if not patient:
+        raise HTTPException(404, "Patient not found")
+    question = body.question.strip()
+    if not question:
+        raise HTTPException(422, "Question is empty")
+    try:
+        result = agent.ask(db, patient, question, history=body.history, doctor_id=doctor.id)
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
+    return {"answer": result.answer, "steps": result.steps, "provider": result.provider,
+            "stopped": result.stopped}
 
 
 # ---------------------------------------------------------------- prescriptions
