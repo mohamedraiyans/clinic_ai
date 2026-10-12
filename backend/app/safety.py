@@ -8,7 +8,7 @@ def check(med: Medicine, patient: Patient) -> list[dict]:
     out: list[dict] = []
     allergies = [a.lower() for a in patient.allergies]
     if med.name.lower() in allergies or (med.allergy_class and med.allergy_class.lower() in allergies):
-        out.append({"severity": "block", "message": f"Patient is allergic to {med.allergy_class or med.name}"})
+        out.append({"severity": "warn", "message": f"Patient is allergic to {med.allergy_class or med.name}"})
     if patient.pregnant and not med.pregnancy_safe:
         out.append({"severity": "block", "message": "Not recommended in pregnancy"})
     if patient.age < med.min_age:
