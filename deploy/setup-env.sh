@@ -14,7 +14,7 @@ usage() { echo "usage: bash deploy/setup-env.sh <dns-name> <allowed-email>"; exi
 main() {
   cd "$(dirname "$0")/.."
   local site="${1:-}" email="${2:-}"
-  [ -n "$site" ] && [ -n "$email" ] || usage
+  if [ -z "$site" ] || [ -z "$email" ]; then usage; fi
   [[ "$site" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "Not a valid host name: $site"; exit 2; }
   [[ "$email" =~ ^[^@,[:space:]]+@[^@,[:space:]]+$ ]] || { echo "Not a valid email address: $email"; exit 2; }
   if [ -e deploy/.env ]; then
@@ -66,7 +66,10 @@ main() {
   local gid gsecret
   gid="$(ask_secret GOOGLE_CLIENT_ID)"
   gsecret="$(ask_secret GOOGLE_CLIENT_SECRET)"
-  [ -n "$gid" ] && [ -n "$gsecret" ] || { echo "Google client ID and secret are required for sign-in."; exit 1; }
+  if [ -z "$gid" ] || [ -z "$gsecret" ]; then
+    echo "Google client ID and secret are required for sign-in."
+    exit 1
+  fi
   set_value GOOGLE_CLIENT_ID "$gid"
   set_value GOOGLE_CLIENT_SECRET "$gsecret"
 
@@ -77,13 +80,16 @@ main() {
   if [ -n "$az_endpoint" ]; then
     az_key="$(ask_secret AZURE_OPENAI_API_KEY)"
     az_deploy="$(ask_plain 'AZURE_OPENAI_DEPLOYMENT_NAME, the name of your model deployment')"
-    [ -n "$az_key" ] && [ -n "$az_deploy" ] || { echo "Azure OpenAI needs the key and the deployment name too."; exit 1; }
+    if [ -z "$az_key" ] || [ -z "$az_deploy" ]; then
+      echo "Azure OpenAI needs the key and the deployment name too."
+      exit 1
+    fi
     set_value AZURE_OPENAI_ENDPOINT "$az_endpoint"
     set_value AZURE_OPENAI_API_KEY "$az_key"
     set_value AZURE_OPENAI_DEPLOYMENT_NAME "$az_deploy"
   fi
   groq="$(ask_secret GROQ_API_KEY)"
-  [ -n "$groq" ] && set_value GROQ_API_KEY "$groq"
+  if [ -n "$groq" ]; then set_value GROQ_API_KEY "$groq"; fi
   if [ -z "$az_endpoint" ] && [ -z "$groq" ]; then
     echo "You need at least one AI provider (Azure OpenAI or Groq)."
     exit 1
