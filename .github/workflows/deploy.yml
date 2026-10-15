@@ -1,0 +1,72 @@
+name: deploy
+
+# Continuous deployment to the Azure VM.
+#
+#   push to main -> "tests" workflow passes -> this workflow updates the server to that exact commit.
+#
+# It is OFF until you create the repository variable DEPLOY_ENABLED = true
+# (GitHub: Settings > Secrets and variables > Actions > Variables), so merging this file cannot break anything.
+# Scheduled test runs and pull requests never deploy. Manual runs only work from main.
+on:
+  workflow_run:
+    workflows: [tests]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false   # never cut a running deploy in half
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: >-
+      vars.DEPLOY_ENABLED == 'true' &&
+      ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+       (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push'))
+    runs-on: ubuntu-latest
+    environment: production   # add required reviewers here later if you want a manual approval step
+    steps:
+      - name: Work out the exact commit to deploy
+        id: target
+        env:
+          TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          sha="${TESTED_SHA:-$CURRENT_SHA}"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "Unexpected SHA: $sha"; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Deploying $sha"
+
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VM_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Deploy on the server (rolls back by itself if the new version does not start)
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_USER: ${{ secrets.VM_USER }}
+          SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o BatchMode=yes \
+            "$VM_USER@$VM_HOST" "cd ~/clinic-ai && git fetch --quiet origin && bash deploy/deploy.sh $SHA"
+
+      - name: Check the live site from outside
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+        run: |
+          curl -fsS --retry 10 --retry-delay 6 --retry-all-errors "$SITE_URL/api/auth/config"
+          echo
+          curl -fsS --retry 5 --retry-delay 4 --retry-all-errors "$SITE_URL/" | grep -q 'id="root"'
+          echo "Site is up: $SITE_URL"

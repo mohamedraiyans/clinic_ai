@@ -189,7 +189,7 @@ It is still a demo of the idea, not a finished feature: its answers are only as 
 
 ## Testing
 
-236 automated backend tests run in about a minute and a half. They check the safety rules, how the app handles the AI's answers, login and permissions, patient editing, prescription signing and verification, and the PDF.
+238 automated backend tests run in about a minute and a half. They check the safety rules, how the app handles the AI's answers, login and permissions, patient editing, prescription signing and verification, and the PDF.
 
 ### Where the tests are
 
@@ -218,7 +218,7 @@ This runs the tests on **your computer**. To run them on GitHub's servers instea
 docker compose --profile test run --rm tests
 ```
 
-Wait for the last line, for example `236 passed in 95.14s`. Do not press Ctrl+C before it appears, or the run is cut short and only shows the tests done so far.
+Wait for the last line, for example `238 passed in 95.14s`. Do not press Ctrl+C before it appears, or the run is cut short and only shows the tests done so far.
 
 Run just one file, or just one test (add `-v` to see every test name):
 
@@ -238,7 +238,7 @@ The `tests` service is not started by a normal `docker compose up`. It only runs
 | `.` | one test passed |
 | `F` | one test failed. The details are printed at the end: which test, which line, expected vs actual value |
 | `E` | the test could not run (setup error) |
-| `236 passed` | everything is fine |
+| `238 passed` | everything is fine |
 | `2 failed, 175 passed` | something broke. Read the `FAILED tests/...` lines at the bottom |
 
 Test names read like sentences, for example `test_penicillin_allergy_blocks_amoxicillin`, so a failure tells you which rule broke.
@@ -287,7 +287,7 @@ The command in "How to run them" runs on **your computer**. GitHub can run the s
 | **Wait for the schedule** | it also runs by itself every 6 hours |
 
 **Where to see the result**
-- **GitHub website:** Actions tab, click the newest run, then **backend**, then the step **`python -m pytest`**. The log ends with `236 passed`. A green ✓ means everything passed, a red ✗ means something failed. Click it and read the failing step.
+- **GitHub website:** Actions tab, click the newest run, then **backend**, then the step **`python -m pytest`**. The log ends with `238 passed`. A green ✓ means everything passed, a red ✗ means something failed. Click it and read the failing step.
 - **VS Code:** install the *GitHub Actions* extension and sign in. The GitHub Actions panel lists the runs for the current branch. Use its refresh button if a new run does not show up.
 
 A run takes about 2 minutes. If the screen shows a yellow spinner, it is still running.
@@ -309,7 +309,7 @@ The same tests run on GitHub without anyone pressing a button. The workflow is `
 
 | When | What runs |
 |---|---|
-| every `git push` and every pull request | backend tests (236) and the frontend TypeScript check |
+| every `git push` and every pull request | backend tests (238) and the frontend TypeScript check |
 | **every 6 hours** (00:00, 06:00, 12:00, 18:00 UTC) | the same checks, even if nobody changed anything. This catches problems caused by outside changes, such as a new library version |
 | when you click **Run workflow** | the same checks, on demand |
 
@@ -359,6 +359,22 @@ GitHub Actions runs the same tests (plus a TypeScript type-check of the frontend
 - Fixed a bug: add a test that fails without the fix. (The first run of this suite found two real bugs this way: a malformed session cookie caused a server error, and a very long unbroken word ran off the PDF page.)
 
 What the tests do **not** cover: how good the real model's medical suggestions are (they vary and cost money, so check them by hand or with a small separate evaluation), and how the screens look.
+
+## Deploying to Azure (local and server side by side)
+
+The server version lives in [`deploy/`](deploy/README.md) and does **not** change how you run the project locally.
+
+| | Local | Server |
+|---|---|---|
+| Start | `docker compose up -d` | `deploy/docker-compose.prod.yml` (a VM running Docker) |
+| Web | Vite dev server, `localhost:5173` | built React app served by nginx, HTTPS through Caddy |
+| Settings | `.env`, `DEV_LOGIN=1` | `deploy/.env` on the server only, `DEV_LOGIN=0` |
+| Updates | you edit files, they reload | **continuous deployment**: push to `main`, tests pass, `deploy` workflow updates the server |
+
+The deploy pipeline (`.github/workflows/deploy.yml`) only runs after the tests pass on `main`, deploys the exact tested
+commit, checks the live site afterwards, and the server script rolls back to the previous commit if the new version does
+not start. It stays switched off until the repository variable `DEPLOY_ENABLED` is `true`.
+The full step-by-step guide, a security checklist and backup commands are in [`deploy/README.md`](deploy/README.md).
 
 ## Known limitations (MVP)
 

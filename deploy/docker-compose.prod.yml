@@ -1,0 +1,64 @@
+# Production stack (Azure VM). Separate from the development docker-compose.yml in the repo root:
+# nothing here is used when you run the project locally.
+#
+#   docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env up -d --build
+#
+# Traffic: internet -> Caddy (HTTPS) -> /api and /verify to the API, everything else to the web (nginx).
+# The database and the API are not published to the host, only Caddy is reachable from outside.
+name: clinic-ai-prod   # keeps containers, networks and volumes separate from a local dev stack
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      retries: 20
+
+  api:
+    build: ../backend
+    restart: unless-stopped
+    env_file: ${APP_ENV_FILE:-.env}   # the server uses deploy/.env; a local test can point this elsewhere
+    depends_on:
+      db:
+        condition: service_healthy
+    # no "ports": only reachable through Caddy. No bind mounts and no --reload: the image is what runs.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/auth/config')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/web.Dockerfile
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+      - web
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data        # keeps the HTTPS certificate across restarts
+      - caddy_config:/config
+
+volumes:
+  pgdata_prod:
+  caddy_data:
+  caddy_config:

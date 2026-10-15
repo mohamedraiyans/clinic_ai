@@ -42,7 +42,15 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Clinic AI", lifespan=lifespan)
+def docs_settings(env=os.environ) -> dict:
+    """On the public server (DISABLE_API_DOCS=1) the interactive API docs are switched off, so the
+    list of endpoints is not shown to strangers. Locally and in tests they stay on."""
+    if env.get("DISABLE_API_DOCS") == "1":
+        return {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    return {}
+
+
+app = FastAPI(title="Clinic AI", lifespan=lifespan, **docs_settings())
 app.include_router(auth.router)
 
 

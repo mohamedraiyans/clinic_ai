@@ -1,0 +1,23 @@
+# SITE_ADDRESS comes from deploy/.env:
+#   on the server:  your DNS name, for example clinic-ai-raiyan.swedencentral.cloudapp.azure.com
+#                   Caddy then gets and renews a free HTTPS certificate by itself.
+#   local test:     ":80" (plain HTTP, no certificate)
+{$SITE_ADDRESS} {
+	encode gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	@backend path /api/* /verify/*
+	handle @backend {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		reverse_proxy web:80
+	}
+}

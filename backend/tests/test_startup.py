@@ -35,6 +35,20 @@ def test_seeding_twice_does_not_duplicate_data():
         assert db.query(Doctor).count() == 1
 
 
+def test_api_docs_are_on_by_default_and_off_on_the_public_server():
+    from app.main import docs_settings
+    assert docs_settings({}) == {}
+    assert docs_settings({"DISABLE_API_DOCS": "0"}) == {}
+    assert docs_settings({"DISABLE_API_DOCS": "1"}) == {"docs_url": None, "redoc_url": None, "openapi_url": None}
+
+
+def test_a_fastapi_app_built_with_docs_disabled_serves_no_docs_pages():
+    from fastapi import FastAPI
+    from app.main import docs_settings
+    hidden = TestClient(FastAPI(**docs_settings({"DISABLE_API_DOCS": "1"})))
+    assert [hidden.get(p).status_code for p in ("/docs", "/redoc", "/openapi.json")] == [404, 404, 404]
+
+
 def test_seeded_patients_cover_the_safety_scenarios():
     with SessionLocal() as db:
         by_name = {p.name: p for p in db.query(Patient)}
