@@ -4,3 +4,8 @@ __pycache__/
 *.pyc
 dist/
 .pytest_cache/
+
+# deployment: real env files stay out of git, the example is tracked
+deploy/.env
+deploy/.env.*
+!deploy/.env.production.example
