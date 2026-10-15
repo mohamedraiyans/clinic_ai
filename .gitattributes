@@ -3,3 +3,4 @@
 deploy/Caddyfile text eol=lf
 deploy/nginx.conf text eol=lf
 deploy/*.Dockerfile text eol=lf
+deploy/.env.production.example text eol=lf
