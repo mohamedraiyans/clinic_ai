@@ -62,11 +62,21 @@ jobs:
       - run: npm install
       - run: npx tsc --noEmit
 
+  # The scripts that run on the server. A mistake here only shows up during a real deploy, so check them here.
+  deploy-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint the server scripts
+        run: shellcheck deploy/deploy.sh deploy/setup-env.sh deploy/test-setup-env.sh
+      - name: Test setup-env.sh on a throw-away copy
+        run: REPO="$GITHUB_WORKSPACE" bash deploy/test-setup-env.sh
+
   # Tells a human. On failure: opens (or updates) one GitHub issue assigned to whoever triggered the
   # run, and GitHub emails the assignee. When tests pass again the issue is closed automatically.
   # Only for the main branch, and never for pull requests (they get a read-only token).
   alert:
-    needs: [backend, frontend-types]
+    needs: [backend, frontend-types, deploy-scripts]
     if: ${{ always() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     permissions:
@@ -79,11 +89,11 @@ jobs:
       EVENT: ${{ github.event_name }}
     steps:
       - name: Open or update the failure issue
-        if: ${{ needs.backend.result == 'failure' || needs['frontend-types'].result == 'failure' }}
+        if: ${{ needs.backend.result == 'failure' || needs['frontend-types'].result == 'failure' || needs['deploy-scripts'].result == 'failure' }}
         run: |
           gh label create ci-failure --color B60205 --description "Automated tests failed" 2>/dev/null || true
-          body=$(printf 'The automated tests failed.\n\n- Trigger: %s\n- Started by: @%s\n- backend: %s\n- frontend-types: %s\n\nSee the run for details: %s' \
-            "$EVENT" "$ACTOR" "${{ needs.backend.result }}" "${{ needs['frontend-types'].result }}" "$RUN_URL")
+          body=$(printf 'The automated tests failed.\n\n- Trigger: %s\n- Started by: @%s\n- backend: %s\n- frontend-types: %s\n- deploy-scripts: %s\n\nSee the run for details: %s' \
+            "$EVENT" "$ACTOR" "${{ needs.backend.result }}" "${{ needs['frontend-types'].result }}" "${{ needs['deploy-scripts'].result }}" "$RUN_URL")
           existing=$(gh issue list --label ci-failure --state open --json number --jq '.[0].number')
           if [ -n "$existing" ]; then
             gh issue comment "$existing" --body "$body"
@@ -93,7 +103,7 @@ jobs:
           fi
 
       - name: Close the issue when tests pass again
-        if: ${{ needs.backend.result == 'success' && needs['frontend-types'].result == 'success' }}
+        if: ${{ needs.backend.result == 'success' && needs['frontend-types'].result == 'success' && needs['deploy-scripts'].result == 'success' }}
         run: |
           for n in $(gh issue list --label ci-failure --state open --json number --jq '.[].number'); do
             gh issue close "$n" --comment "Tests are passing again: $RUN_URL"

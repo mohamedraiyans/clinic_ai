@@ -376,6 +376,19 @@ commit, checks the live site afterwards, and the server script rolls back to the
 not start. It stays switched off until the repository variable `DEPLOY_ENABLED` is `true`.
 The full step-by-step guide, a security checklist and backup commands are in [`deploy/README.md`](deploy/README.md).
 
+**Quick path** (details and exact fields are in the guide):
+1. Create an Ubuntu 24.04 VM (2 vCPU, 4 GB or more) with a static IP and a DNS name. Open ports **22, 80 and 443**, and check them in the firewall rules.
+2. Connect with SSH, install Docker, and `git clone` the repository.
+3. `bash deploy/setup-env.sh <dns-name> <allowed-email>` creates the server's settings (new random secrets, hidden prompts for your keys).
+4. Add the server address to your Google OAuth redirect URIs.
+5. `bash deploy/deploy.sh "$(git rev-parse HEAD)"` for the first deploy, then open `https://<dns-name>`.
+6. Add the GitHub secrets and variables, and set `DEPLOY_ENABLED=true` to switch on continuous deployment.
+
+**A lesson from the first real deployment:** use an Azure account you own long-term, not a university or employer account. The
+first deployment worked, but the university account was closed afterwards and the portal became unreachable. Nothing in
+this repository depends on any one account, so the same steps work on a new Azure account or any other Ubuntu server.
+The server scripts are also checked in CI (`shellcheck`, and a test for `setup-env.sh`).
+
 ## Known limitations (MVP)
 
 - All allowlisted doctors share one patient list. There are no roles (admin) and no patient archive or delete.
